@@ -28,8 +28,8 @@ services:
       # Optional: enable superslave/autosecondary
       # PDNS_autosecondary: "yes"
     ports:
-      - "53:53"
-      - "53:53/udp"
+      - "${PDNS_PORT_TCP:-1053}:53/tcp"
+      - "${PDNS_PORT_UDP:-1053}:53/udp"
 
 volumes:
   pdns_db_data:

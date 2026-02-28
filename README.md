@@ -100,6 +100,108 @@ Mounted paths must be writable by the `pdns` user inside the container.
 - PostgreSQL: `docker compose -f docker-compose.yml up --build`
 - MySQL: `docker compose -f docker-compose.mysql.yml up --build`
 
+The compose files publish container port `53` to host port `1053` by default to avoid conflicts with a local DNS service already using `53`.
+
+Use standard DNS port `53` explicitly when needed:
+
+```sh
+PDNS_PORT_TCP=53 PDNS_PORT_UDP=53 docker compose -f docker-compose.yml up --build
+```
+
+<details>
+<summary>PostgreSQL compose example</summary>
+
+```yaml
+services:
+  pdns-db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: powerdns
+      POSTGRES_PASSWORD: powerdns
+      POSTGRES_DB: powerdns
+    ports:
+      - "5432:5432"
+    volumes:
+      - pdns_db_data:/var/lib/postgresql
+
+  pdns:
+    build: .
+    depends_on:
+      - pdns-db
+    environment:
+      PDNS_launch: gpgsql
+      PDNS_gpgsql_host: pdns-db
+      PDNS_gpgsql_port: 5432
+      PDNS_gpgsql_user: powerdns
+      PDNS_gpgsql_password: powerdns
+      PDNS_gpgsql_dbname: powerdns
+    ports:
+      - "${PDNS_PORT_TCP:-1053}:53/tcp"
+      - "${PDNS_PORT_UDP:-1053}:53/udp"
+
+volumes:
+  pdns_db_data:
+```
+
+</details>
+
+<details>
+<summary>SQLite compose example</summary>
+
+```yaml
+services:
+  pdns:
+    build: .
+    environment:
+      PDNS_launch: gsqlite3
+      PDNS_gsqlite3_database: /var/lib/powerdns/pdns.sqlite3
+    ports:
+      - "${PDNS_PORT_TCP:-1053}:53/tcp"
+      - "${PDNS_PORT_UDP:-1053}:53/udp"
+    volumes:
+      - ./data:/var/lib/powerdns
+```
+
+</details>
+
+<details>
+<summary>MySQL compose example</summary>
+
+```yaml
+services:
+  pdns-db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: powerdns
+      MYSQL_USER: powerdns
+      MYSQL_PASSWORD: powerdns
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - pdns_mysql_data:/var/lib/mysql
+
+  pdns:
+    build: .
+    depends_on:
+      - pdns-db
+    environment:
+      PDNS_launch: gmysql
+      PDNS_gmysql_host: pdns-db
+      PDNS_gmysql_port: 3306
+      PDNS_gmysql_user: powerdns
+      PDNS_gmysql_password: powerdns
+      PDNS_gmysql_dbname: powerdns
+    ports:
+      - "${PDNS_PORT_TCP:-1053}:53/tcp"
+      - "${PDNS_PORT_UDP:-1053}:53/udp"
+
+volumes:
+  pdns_mysql_data:
+```
+
+</details>
+
 ## Building
 
 ```sh

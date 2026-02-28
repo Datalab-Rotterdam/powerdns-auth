@@ -25,8 +25,8 @@ services:
       PDNS_gmysql_password: powerdns
       PDNS_gmysql_dbname: powerdns
     ports:
-      - "53:53/tcp"
-      - "53:53/udp"
+      - "${PDNS_PORT_TCP:-1053}:53/tcp"
+      - "${PDNS_PORT_UDP:-1053}:53/udp"
 
 volumes:
   pdns_mysql_data:
