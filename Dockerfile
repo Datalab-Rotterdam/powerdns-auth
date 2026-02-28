@@ -5,6 +5,7 @@ RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         ca-certificates \
         curl \
+        default-mysql-client \
         postgresql-client \
         sqlite3 \
     && rm -rf /var/lib/apt/lists/*
@@ -67,6 +68,7 @@ USER pdns
 
 # Environment defaults
 ENV PDNS_launch=gsqlite3 \
+    PDNS_gsqlite3_database=/var/lib/powerdns/pdns.sqlite3 \
     PDNS_guardian=yes \
     PDNS_setuid=pdns \
     PDNS_setgid=pdns

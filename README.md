@@ -1,34 +1,31 @@
 # PowerDNS Authoritative Server Docker Image
 
-A secure, flexible, and production-ready Docker image for **PowerDNS Authoritative Server**, supporting **all official backends** (PostgreSQL, MySQL, SQLite3, BIND, LMDB, LDAP, and more) with automatic schema initialization and runtime configuration via environment variables.
+A flexible Docker image for PowerDNS Authoritative Server with runtime backend selection via `PDNS_launch`.
 
-Built on **Debian `trixie-slim`**, this image follows container best practices: minimal footprint, non-root execution, and declarative setup.
+Built on `debian:trixie-slim`, the image runs as the `pdns` user and includes the official PowerDNS auth repository plus the main backend packages.
 
+## Features
 
-## ✨ Features
+- Includes the common official backends: `gpgsql`, `gmysql`, `gsqlite3`, `bind`, `lmdb`, `ldap`, `geoip`, `lua2`, `pipe`, `remote`, `tinydns`, and `godbc`
+- Initializes PostgreSQL, MySQL, and SQLite3 schemas automatically
+- Generates `pdns.conf` from `PDNS_` environment variables using `subvars`
+- Defaults to SQLite3 with `PDNS_gsqlite3_database=/var/lib/powerdns/pdns.sqlite3`
+- Runs as the `pdns` user
 
-- **All PowerDNS backends included**: `gpgsql`, `gmysql`, `gsqlite3`, `bind`, `lmdb`, `ldap`, `geoip`, `lua2`, `pipe`, `remote`, `tinydns`, and more.
-- **Automatic database initialization** for PostgreSQL, MySQL, and SQLite3 (with optional skip flags).
-- **Secure APT setup**: Uses PowerDNS’s official GPG-signed repository (`auth-50`).
-- **Runtime configuration**: Generate `pdns.conf` from a template using environment variables via [`subvars`](https://github.com/kha7iq/subvars).
-- **Non-root execution**: Runs as the dedicated `pdns` user.
-- **Healthcheck ready**: Includes a `pdns_control ping` health probe.
-- **Multi-arch support**: Works on `amd64` and `arm64`.
+## Usage
 
-
-## 📦 Usage
-
-### Basic (SQLite3 backend)
+### Basic SQLite3
 
 ```sh
 docker run -d \
   --name pdns \
   -p 53:53 \
   -p 53:53/udp \
-  ghcr.io/<your-username>/pdns-authoritative:latest
+  -v ./data:/var/lib/powerdns \
+  ghcr.io/alexanderslaa/powerdns-auth:latest
 ```
 
-### PostgreSQL Backend
+### PostgreSQL
 
 ```sh
 docker run -d \
@@ -42,10 +39,10 @@ docker run -d \
   -e PDNS_gpgsql_password=secret \
   -e PDNS_gpgsql_dbname=pdns \
   --network my-net \
-  docker pull ghcr.io/alexanderslaa/powerdns-auth:latest
+  ghcr.io/alexanderslaa/powerdns-auth:latest
 ```
 
-### MySQL Backend
+### MySQL
 
 ```sh
 docker run -d \
@@ -58,89 +55,59 @@ docker run -d \
   -e PDNS_gmysql_user=pdns \
   -e PDNS_gmysql_password=secret \
   -e PDNS_gmysql_dbname=pdns \
-  docker pull ghcr.io/alexanderslaa/powerdns-auth:latest
+  --network my-net \
+  ghcr.io/alexanderslaa/powerdns-auth:latest
 ```
 
-## ⚙️ Configuration
+## Configuration
 
-All PowerDNS settings can be configured via environment variables prefixed with `PDNS_`.
+Any PowerDNS setting can be passed as an environment variable prefixed with `PDNS_`.
 
-### Core Variables
+Examples:
 
-| Variable | Default | Description |
-|--------|--------|------------|
-| `PDNS_launch` | `gsqlite3` | Comma-separated list of backends (e.g., `gpgsql,gsqlite3`) |
-| `PDNS_guardian` | `yes` | Enable guardian process |
-| `PDNS_setuid` / `PDNS_setgid` | `pdns` | User/group to run as |
-| `PDNS_local_address` | `0.0.0.0` | Listen IPv4 address |
-| `PDNS_local_ipv6` | `::` | Listen IPv6 address |
-| `PDNS_local_port` | `53` | DNS port |
-| `PDNS_master` / `PDNS_slave` | `no` | Enable master/slave mode |
-| `PDNS_loglevel` | `3` | Logging verbosity (0–9) |
+- `launch=gpgsql,gsqlite3` becomes `PDNS_launch=gpgsql,gsqlite3`
+- `allow-axfr-ips=10.0.0.1` becomes `PDNS_allow_axfr_ips=10.0.0.1`
+- `gsqlite3-database=/var/lib/powerdns/pdns.sqlite3` becomes `PDNS_gsqlite3_database=/var/lib/powerdns/pdns.sqlite3`
 
-### Backend-Specific Examples
+Common defaults:
 
-- **SQLite3**: `PDNS_gsqlite3_database=/var/lib/powerdns/pdns.sqlite3`
-- **PostgreSQL**: `PDNS_gpgsql_host`, `PDNS_gpgsql_user`, `PDNS_gpgsql_password`, etc.
-- **BIND**: `PDNS_bind_config=/etc/powerdns/bindbackend.conf`
+| Variable | Default |
+| --- | --- |
+| `PDNS_launch` | `gsqlite3` |
+| `PDNS_gsqlite3_database` | `/var/lib/powerdns/pdns.sqlite3` |
+| `PDNS_guardian` | `yes` |
+| `PDNS_setuid` | `pdns` |
+| `PDNS_setgid` | `pdns` |
 
-> 💡 The full list of supported settings matches [PowerDNS’s official documentation](https://doc.powerdns.com/authoritative/). Just prefix with `PDNS_` and use lowercase/underscore (e.g., `allow-axfr-ips` → `PDNS_allow_axfr_ips`).
+Reference: https://doc.powerdns.com/authoritative/
 
+## Database Initialization
 
-## 🛑 Skipping Database Initialization
+Set `SKIP_DB_INIT=true` to skip schema setup entirely.
 
-To prevent automatic DB creation/schema setup (e.g., when reusing an existing DB):
+Set `SKIP_DB_CREATE=true` to skip only database creation for PostgreSQL or MySQL.
 
-```sh
--e SKIP_DB_INIT=true
-```
+## Volumes
 
-To skip only **database creation** but still run schema init:
+Mounted paths must be writable by the `pdns` user inside the container.
 
-```sh
--e SKIP_DB_CREATE=true
-```
+- SQLite3 and LMDB data: mount `/var/lib/powerdns`
+- BIND backend files: mount the relevant config and zone paths under `/etc/powerdns`
 
+## Compose Examples
 
-## 📁 Volumes (Optional)
+- SQLite3: `docker compose -f docker-compose.sqlite.yml up --build`
+- PostgreSQL: `docker compose -f docker-compose.yml up --build`
+- MySQL: `docker compose -f docker-compose.mysql.yml up --build`
 
-For persistent SQLite3 or LMDB data:
-
-```sh
--v ./data:/var/lib/powerdns
-```
-
-For custom configs or zone files (when using `bind` backend):
-
-```sh
--v ./bind:/etc/powerdns/bind
-```
-
-> ⚠️ The container ensures correct ownership (`pdns:pdns`) on `/var/lib/powerdns`.
-
----
-
-## 🔒 Security
-
-- Runs as non-root user (`pdns`).
-- Uses official PowerDNS APT repository with GPG signature verification.
-- Minimal base image (`debian:trixie-slim`).
-- No unnecessary packages installed.
-
-
-## 🛠 Building
+## Building
 
 ```sh
 docker build -t pdns-authoritative .
 ```
 
-For multi-arch (requires `buildx`):
+For multi-arch builds:
 
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64 -t <your-registry>/pdns-authoritative:latest --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/alexanderslaa/powerdns-auth:latest --push .
 ```
-
-
-## 📜 License
-
-This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.

@@ -1,0 +1,32 @@
+services:
+  pdns-db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: powerdns
+      MYSQL_USER: powerdns
+      MYSQL_PASSWORD: powerdns
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - pdns_mysql_data:/var/lib/mysql
+
+  pdns:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - pdns-db
+    environment:
+      PDNS_launch: gmysql
+      PDNS_gmysql_host: pdns-db
+      PDNS_gmysql_port: 3306
+      PDNS_gmysql_user: powerdns
+      PDNS_gmysql_password: powerdns
+      PDNS_gmysql_dbname: powerdns
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+
+volumes:
+  pdns_mysql_data:
