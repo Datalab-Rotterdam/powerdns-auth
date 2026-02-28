@@ -24,6 +24,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Resolve Docker Hub repository
+        id: repo
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+        run: |
+          if [ -n "$DOCKERHUB_REPOSITORY" ]; then
+            repository="$DOCKERHUB_REPOSITORY"
+          else
+            repository="$DOCKERHUB_USERNAME/powerdns-auth"
+          fi
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -58,7 +71,7 @@ jobs:
       - name: Check published Docker Hub tags
         id: published
         run: |
-          if docker manifest inspect "dl010/powerdns-auth:${{ steps.pdns.outputs.version }}" >/dev/null 2>&1; then
+          if docker manifest inspect "${{ steps.repo.outputs.repository }}:${{ steps.pdns.outputs.version }}" >/dev/null 2>&1; then
             echo "version_exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "version_exists=false" >> "$GITHUB_OUTPUT"
@@ -69,7 +82,7 @@ jobs:
         if: github.event_name != 'schedule' || steps.published.outputs.version_exists != 'true'
         uses: docker/metadata-action@v5
         with:
-          images: dl010/powerdns-auth
+          images: ${{ steps.repo.outputs.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ steps.pdns.outputs.version }}
@@ -89,4 +102,4 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: dl010/powerdns-auth
+          repository: ${{ steps.repo.outputs.repository }}
