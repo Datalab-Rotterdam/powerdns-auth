@@ -51,6 +51,53 @@ ensure_writable_dir() {
 
 validate_backends
 
+prune_backend_env() {
+    while IFS='=' read -r name _; do
+        case "$name" in
+            PDNS_bind_*)
+                backend_enabled "bind" || unset "$name"
+                ;;
+            PDNS_geoip_*)
+                backend_enabled "geoip" || unset "$name"
+                ;;
+            PDNS_gmysql_*)
+                backend_enabled "gmysql" || unset "$name"
+                ;;
+            PDNS_godbc_*)
+                backend_enabled "godbc" || unset "$name"
+                ;;
+            PDNS_gpgsql_*)
+                backend_enabled "gpgsql" || unset "$name"
+                ;;
+            PDNS_gsqlite3_*)
+                backend_enabled "gsqlite3" || unset "$name"
+                ;;
+            PDNS_ldap_*)
+                backend_enabled "ldap" || unset "$name"
+                ;;
+            PDNS_lmdb_*)
+                backend_enabled "lmdb" || unset "$name"
+                ;;
+            PDNS_lua2_*)
+                backend_enabled "lua2" || unset "$name"
+                ;;
+            PDNS_pipe_*)
+                backend_enabled "pipe" || unset "$name"
+                ;;
+            PDNS_remote_*)
+                backend_enabled "remote" || unset "$name"
+                ;;
+            PDNS_tinydns_*)
+                backend_enabled "tinydns" || unset "$name"
+                ;;
+        esac
+    done <<EOF
+$(env)
+EOF
+}
+
+prune_backend_env
+
 if backend_enabled "gpgsql"; then
     echo "-> PostgreSQL (gpgsql) backend enabled."
     if [ "${SKIP_DB_INIT:-false}" = "true" ]; then
