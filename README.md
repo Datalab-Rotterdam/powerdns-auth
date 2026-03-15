@@ -1,5 +1,10 @@
 # PowerDNS Authoritative Server Docker Image
 
+![Docker Image Version](https://img.shields.io/docker/v/dl010/powerdns-auth)
+![Docker Pulls](https://img.shields.io/docker/pulls/dl010/powerdns-auth)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/AlexanderSlaa/powerdns-auth/publish.yml)
+
+
 A flexible Docker image for PowerDNS Authoritative Server with runtime backend selection via `PDNS_launch`.
 
 Built on `debian:trixie-slim`, the image runs as the `pdns` user and includes the official PowerDNS auth repository plus the main backend packages.
@@ -95,6 +100,12 @@ Mounted paths must be writable by the `pdns` user inside the container.
 - BIND backend files: mount the relevant config and zone paths under `/etc/powerdns`
 
 ## Compose Examples
+
+> [!WARNING]
+> The provided Docker Compose examples expose database ports on the host machine.  
+> **Do not use this configuration in production environments** unless proper firewall rules, network restrictions, and access controls are in place.  
+>  
+> These examples are intended **for local development and testing only**.
 
 - SQLite3: `docker compose -f docker-compose.sqlite.yml up --build`
 - PostgreSQL: `docker compose -f docker-compose.yml up --build`
@@ -201,6 +212,13 @@ volumes:
 ```
 
 </details>
+
+## Security Considerations
+
+- Do not expose database ports directly on public interfaces.
+- Use private Docker networks where possible.
+- Restrict access using firewalls or reverse proxies.
+- Use strong credentials and secret management.
 
 ## Building
 
