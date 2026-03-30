@@ -58,7 +58,6 @@ jobs:
           cleanup() {
             docker rm -f pdns-sqlite-smoke pdns-pg-smoke pdns-pg-db pdns-mysql-smoke pdns-mysql-db >/dev/null 2>&1 || true
             docker network rm pdns-smoke-net >/dev/null 2>&1 || true
-            rm -rf "$RUNNER_TEMP/pdns-sqlite"
           }
           trap cleanup EXIT
 
@@ -78,9 +77,7 @@ jobs:
             return 1
           }
 
-          mkdir -p "$RUNNER_TEMP/pdns-sqlite"
           docker run -d --name pdns-sqlite-smoke \
-            -v "$RUNNER_TEMP/pdns-sqlite:/var/lib/powerdns" \
             pdns-auth:smoke
           wait_for_health pdns-sqlite-smoke
           docker exec pdns-sqlite-smoke pdns_control ping | grep -q '^PONG$'
