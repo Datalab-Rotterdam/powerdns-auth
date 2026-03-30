@@ -95,13 +95,13 @@ jobs:
             local container="$1"
             local attempts="${2:-60}"
             for _ in $(seq 1 "$attempts"); do
-              if docker exec "$container" mysqladmin ping -uroot -prootpassword >/dev/null 2>&1; then
+              if docker exec "$container" mysql -upowerdns -ppowerdns -D powerdns -e "SELECT 1" >/dev/null 2>&1; then
                 return 0
               fi
               sleep 2
             done
             docker logs "$container" || true
-            echo "MySQL container $container did not become ready" >&2
+            echo "MySQL container $container did not become ready for the powerdns user/database" >&2
             return 1
           }
 
