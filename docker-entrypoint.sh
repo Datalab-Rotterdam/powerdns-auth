@@ -164,7 +164,7 @@ if backend_enabled "gmysql"; then
     else
         MYSQL_SSL_ARGS="$(mysql_client_ssl_args)"
         echo "  Waiting for MySQL at ${PDNS_gmysql_host}:${PDNS_gmysql_port}..."
-        until mysqladmin $MYSQL_SSL_ARGS -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" >/dev/null 2>&1; do
+        until mysqladmin $MYSQL_SSL_ARGS -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" ping >/dev/null 2>&1; do
             sleep 2
         done
 
