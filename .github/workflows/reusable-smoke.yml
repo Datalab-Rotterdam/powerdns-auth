@@ -20,8 +20,11 @@ on:
         required: false
 
 jobs:
-  smoke:
+  build-smoke-image:
+    name: smoke / build
     runs-on: ubuntu-latest
+    outputs:
+      artifact_name: pdns-auth-smoke-image
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -50,14 +53,91 @@ jobs:
 
           docker build "${build_args[@]}" -t pdns-auth:smoke .
 
-      - name: Run smoke tests
+      - name: Save smoke-test image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker save pdns-auth:smoke -o pdns-auth-smoke.tar
+
+      - name: Upload smoke-test image
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdns-auth-smoke-image
+          path: pdns-auth-smoke.tar
+          if-no-files-found: error
+
+  smoke-sqlite:
+    name: smoke / sqlite
+    runs-on: ubuntu-latest
+    needs: build-smoke-image
+    steps:
+      - name: Download smoke-test image
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-smoke-image.outputs.artifact_name }}
+
+      - name: Load smoke-test image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker load -i pdns-auth-smoke.tar
+
+      - name: Run SQLite smoke test
         shell: bash
         run: |
           set -euo pipefail
 
           cleanup() {
-            docker rm -f pdns-sqlite-smoke pdns-pg-smoke pdns-pg-db pdns-mysql-smoke pdns-mysql-db >/dev/null 2>&1 || true
-            docker network rm pdns-smoke-net >/dev/null 2>&1 || true
+            docker rm -f pdns-sqlite-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          wait_for_health() {
+            local container="$1"
+            local attempts="${2:-45}"
+            local status=""
+            for _ in $(seq 1 "$attempts"); do
+              status="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container")"
+              if [ "$status" = "healthy" ]; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs "$container" || true
+            echo "Container $container did not become healthy. Final status: $status" >&2
+            return 1
+          }
+
+          docker run -d --name pdns-sqlite-smoke pdns-auth:smoke
+          wait_for_health pdns-sqlite-smoke
+          docker exec pdns-sqlite-smoke pdns_control ping | grep -q '^PONG$'
+          docker exec pdns-sqlite-smoke sqlite3 /var/lib/powerdns/pdns.sqlite3 \
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='domains';" | grep -q '^domains$'
+
+  smoke-postgres:
+    name: smoke / postgres
+    runs-on: ubuntu-latest
+    needs: build-smoke-image
+    steps:
+      - name: Download smoke-test image
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-smoke-image.outputs.artifact_name }}
+
+      - name: Load smoke-test image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker load -i pdns-auth-smoke.tar
+
+      - name: Run PostgreSQL smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            docker rm -f pdns-pg-smoke pdns-pg-db >/dev/null 2>&1 || true
+            docker network rm pdns-smoke-net-pg >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
@@ -91,6 +171,70 @@ jobs:
             return 1
           }
 
+          docker network create pdns-smoke-net-pg
+
+          docker run -d --name pdns-pg-db --network pdns-smoke-net-pg \
+            -e POSTGRES_USER=powerdns \
+            -e POSTGRES_PASSWORD=powerdns \
+            -e POSTGRES_DB=powerdns \
+            postgres:18
+          wait_for_postgres pdns-pg-db
+
+          docker run -d --name pdns-pg-smoke --network pdns-smoke-net-pg \
+            -e PDNS_launch=gpgsql \
+            -e PDNS_DB_CREATE=true \
+            -e PDNS_gpgsql_host=pdns-pg-db \
+            -e PDNS_gpgsql_port=5432 \
+            -e PDNS_gpgsql_user=powerdns \
+            -e PDNS_gpgsql_password=powerdns \
+            -e PDNS_gpgsql_dbname=powerdns \
+            pdns-auth:smoke
+          wait_for_health pdns-pg-smoke
+          docker exec pdns-pg-smoke pdns_control ping | grep -q '^PONG$'
+
+  smoke-mysql:
+    name: smoke / mysql
+    runs-on: ubuntu-latest
+    needs: build-smoke-image
+    steps:
+      - name: Download smoke-test image
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-smoke-image.outputs.artifact_name }}
+
+      - name: Load smoke-test image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker load -i pdns-auth-smoke.tar
+
+      - name: Run MySQL smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            docker rm -f pdns-mysql-smoke pdns-mysql-db >/dev/null 2>&1 || true
+            docker network rm pdns-smoke-net-mysql >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          wait_for_health() {
+            local container="$1"
+            local attempts="${2:-45}"
+            local status=""
+            for _ in $(seq 1 "$attempts"); do
+              status="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container")"
+              if [ "$status" = "healthy" ]; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs "$container" || true
+            echo "Container $container did not become healthy. Final status: $status" >&2
+            return 1
+          }
+
           wait_for_mysql() {
             local container="$1"
             local attempts="${2:-60}"
@@ -105,41 +249,17 @@ jobs:
             return 1
           }
 
-          docker run -d --name pdns-sqlite-smoke \
-            pdns-auth:smoke
-          wait_for_health pdns-sqlite-smoke
-          docker exec pdns-sqlite-smoke pdns_control ping | grep -q '^PONG$'
-          docker exec pdns-sqlite-smoke sqlite3 /var/lib/powerdns/pdns.sqlite3 \
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='domains';" | grep -q '^domains$'
+          docker network create pdns-smoke-net-mysql
 
-          docker network create pdns-smoke-net
-
-          docker run -d --name pdns-pg-db --network pdns-smoke-net \
-            -e POSTGRES_USER=powerdns \
-            -e POSTGRES_PASSWORD=powerdns \
-            -e POSTGRES_DB=powerdns \
-            postgres:18
-          wait_for_postgres pdns-pg-db
-          docker run -d --name pdns-pg-smoke --network pdns-smoke-net \
-            -e PDNS_launch=gpgsql \
-            -e PDNS_DB_CREATE=true \
-            -e PDNS_gpgsql_host=pdns-pg-db \
-            -e PDNS_gpgsql_port=5432 \
-            -e PDNS_gpgsql_user=powerdns \
-            -e PDNS_gpgsql_password=powerdns \
-            -e PDNS_gpgsql_dbname=powerdns \
-            pdns-auth:smoke
-          wait_for_health pdns-pg-smoke
-          docker exec pdns-pg-smoke pdns_control ping | grep -q '^PONG$'
-
-          docker run -d --name pdns-mysql-db --network pdns-smoke-net \
+          docker run -d --name pdns-mysql-db --network pdns-smoke-net-mysql \
             -e MYSQL_DATABASE=powerdns \
             -e MYSQL_USER=powerdns \
             -e MYSQL_PASSWORD=powerdns \
             -e MYSQL_ROOT_PASSWORD=rootpassword \
             mysql:8.4
           wait_for_mysql pdns-mysql-db
-          docker run -d --name pdns-mysql-smoke --network pdns-smoke-net \
+
+          docker run -d --name pdns-mysql-smoke --network pdns-smoke-net-mysql \
             -e PDNS_launch=gmysql \
             -e PDNS_DB_CREATE=true \
             -e PDNS_gmysql_ssl_mode=DISABLED \
