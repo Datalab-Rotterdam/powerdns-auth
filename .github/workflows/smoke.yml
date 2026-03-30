@@ -2,60 +2,8 @@ name: smoke
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
-  sqlite:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Build image
-        run: docker build -t pdns-auth:test .
-
-      - name: Start SQLite container
-        run: docker run -d --name pdns-sqlite pdns-auth:test
-
-      - name: Wait for healthcheck
-        run: |
-          for i in $(seq 1 30); do
-            status=$(docker inspect --format='{{.State.Health.Status}}' pdns-sqlite)
-            if [ "$status" = "healthy" ]; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs pdns-sqlite
-          exit 1
-
-      - name: Stop container
-        if: always()
-        run: docker rm -f pdns-sqlite
-
-  postgres:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Start PostgreSQL stack
-        run: docker compose -f docker-compose.yml up -d --build
-
-      - name: Wait for PowerDNS healthcheck
-        run: |
-          for i in $(seq 1 45); do
-            status=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose -f docker-compose.yml ps -q pdns))
-            if [ "$status" = "healthy" ]; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker compose -f docker-compose.yml logs
-          exit 1
-
-      - name: Stop stack
-        if: always()
-        run: docker compose -f docker-compose.yml down -v
+  smoke:
+    uses: ./.github/workflows/reusable-smoke.yml

@@ -1,5 +1,11 @@
 FROM debian:trixie-slim
 
+ARG SUBVARS_VERSION=0.1.5
+ARG SUBVARS_SHA256_AMD64=2426c7ac07831bdf8d410ee9d6cea73db447b0314842dbb7c0c80a0a425af86c
+ARG SUBVARS_SHA256_ARM64=80385062c52c45a7b5905adde7abb070c0b9d835638d2667a4142781e02f9250
+ARG IMAGE_VERSION=dev
+ARG IMAGE_REPOSITORY=https://github.com/Datalab-Rotterdam/powerdns-auth
+
 # Install dependencies and tools
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -10,19 +16,28 @@ RUN apt-get update && \
         sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install subvars (latest release)
+# Install subvars with an explicit version and checksum verification
 RUN set -e; \
-    LATEST_VERSION=$(curl -fsSL https://api.github.com/repos/kha7iq/subvars/releases/latest | \
-                    grep '"tag_name"' | cut -d'"' -f4 | sed 's/^v//'); \
     ARCH=$(dpkg --print-architecture); \
     case "$ARCH" in \
-        amd64)   SUBVARS_ARCH="x86_64" ;; \
-        arm64)   SUBVARS_ARCH="arm64" ;; \
+        amd64) \
+            SUBVARS_ARCH="x86_64"; \
+            SUBVARS_SHA256="${SUBVARS_SHA256_AMD64:-}"; \
+            ;; \
+        arm64) \
+            SUBVARS_ARCH="arm64"; \
+            SUBVARS_SHA256="${SUBVARS_SHA256_ARM64:-}"; \
+            ;; \
         *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
     esac; \
-    DOWNLOAD_URL="https://github.com/kha7iq/subvars/releases/download/v${LATEST_VERSION}/subvars_Linux_${SUBVARS_ARCH}.tar.gz"; \
-    echo "Downloading subvars from: ${DOWNLOAD_URL}"; \
-    curl -fsSL "${DOWNLOAD_URL}" | tar -xz -C /usr/local/bin; \
+    [ -n "$SUBVARS_SHA256" ] || { echo "Missing subvars checksum for $ARCH" >&2; exit 1; }; \
+    DOWNLOAD_URL="https://github.com/kha7iq/subvars/releases/download/v${SUBVARS_VERSION}/subvars_Linux_${SUBVARS_ARCH}.tar.gz"; \
+    TMP_ARCHIVE="$(mktemp)"; \
+    echo "Downloading subvars ${SUBVARS_VERSION} from: ${DOWNLOAD_URL}"; \
+    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_ARCHIVE"; \
+    echo "${SUBVARS_SHA256}  ${TMP_ARCHIVE}" | sha256sum -c -; \
+    tar -xzf "$TMP_ARCHIVE" -C /usr/local/bin; \
+    rm -f "$TMP_ARCHIVE"; \
     chmod +x /usr/local/bin/subvars
 
 # Add PowerDNS APT repository
@@ -71,7 +86,9 @@ ENV PDNS_launch=gsqlite3 \
     PDNS_gsqlite3_database=/var/lib/powerdns/pdns.sqlite3 \
     PDNS_guardian=yes \
     PDNS_setuid=pdns \
-    PDNS_setgid=pdns
+    PDNS_setgid=pdns \
+    IMAGE_VERSION=${IMAGE_VERSION} \
+    IMAGE_REPOSITORY=${IMAGE_REPOSITORY}
 
 EXPOSE 53 53/udp
 

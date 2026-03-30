@@ -27,7 +27,7 @@ docker run -d \
   -p 53:53 \
   -p 53:53/udp \
   -v ./data:/var/lib/powerdns \
-  ghcr.io/alexanderslaa/powerdns-auth:latest
+  dl010/powerdns-auth:latest
 ```
 
 ### PostgreSQL
@@ -44,7 +44,7 @@ docker run -d \
   -e PDNS_gpgsql_password=secret \
   -e PDNS_gpgsql_dbname=pdns \
   --network my-net \
-  ghcr.io/alexanderslaa/powerdns-auth:latest
+  dl010/powerdns-auth:latest
 ```
 
 ### MySQL
@@ -61,7 +61,7 @@ docker run -d \
   -e PDNS_gmysql_password=secret \
   -e PDNS_gmysql_dbname=pdns \
   --network my-net \
-  ghcr.io/alexanderslaa/powerdns-auth:latest
+  dl010/powerdns-auth:latest
 ```
 
 ## Configuration
@@ -88,9 +88,25 @@ Reference: https://doc.powerdns.com/authoritative/
 
 ## Database Initialization
 
-Set `SKIP_DB_INIT=true` to skip schema setup entirely.
+By default, the image initializes schemas automatically when they are missing.
 
-Set `SKIP_DB_CREATE=true` to skip only database creation for PostgreSQL or MySQL.
+For PostgreSQL and MySQL, database creation is disabled by default. Enable it explicitly when you want a first-run bootstrap experience:
+
+- `PDNS_DB_INIT=true` initializes the schema when it is missing. Default: `true`
+- `PDNS_DB_CREATE=true` creates the PostgreSQL or MySQL database when it does not exist. Default: `false`
+
+Legacy compatibility flags are still supported:
+
+- `SKIP_DB_INIT=true` skips schema setup entirely
+- `SKIP_DB_CREATE=true` skips only database creation for PostgreSQL or MySQL
+
+For local development, you will usually want:
+
+```sh
+PDNS_DB_CREATE=true
+```
+
+For production, prefer a pre-created database with least-privilege credentials and keep `PDNS_DB_CREATE=false`.
 
 ## Volumes
 
@@ -141,6 +157,7 @@ services:
       - pdns-db
     environment:
       PDNS_launch: gpgsql
+      PDNS_DB_CREATE: "true"
       PDNS_gpgsql_host: pdns-db
       PDNS_gpgsql_port: 5432
       PDNS_gpgsql_user: powerdns
@@ -198,6 +215,7 @@ services:
       - pdns-db
     environment:
       PDNS_launch: gmysql
+      PDNS_DB_CREATE: "true"
       PDNS_gmysql_host: pdns-db
       PDNS_gmysql_port: 3306
       PDNS_gmysql_user: powerdns
@@ -229,5 +247,5 @@ docker build -t pdns-authoritative .
 For multi-arch builds:
 
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/alexanderslaa/powerdns-auth:latest --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t dl010/powerdns-auth:latest --push .
 ```

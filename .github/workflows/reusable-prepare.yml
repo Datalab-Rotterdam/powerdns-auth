@@ -1,0 +1,100 @@
+name: reusable-prepare
+
+on:
+  workflow_call:
+    outputs:
+      repository:
+        description: Docker Hub repository name
+        value: ${{ jobs.prepare.outputs.repository }}
+      pdns_version:
+        description: Resolved PowerDNS version
+        value: ${{ jobs.prepare.outputs.pdns_version }}
+      subvars_version:
+        description: Resolved subvars version
+        value: ${{ jobs.prepare.outputs.subvars_version }}
+      subvars_sha256_amd64:
+        description: subvars amd64 checksum
+        value: ${{ jobs.prepare.outputs.subvars_sha256_amd64 }}
+      subvars_sha256_arm64:
+        description: subvars arm64 checksum
+        value: ${{ jobs.prepare.outputs.subvars_sha256_arm64 }}
+      version_exists:
+        description: Whether the Docker Hub version tag already exists
+        value: ${{ jobs.prepare.outputs.version_exists }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      repository: ${{ steps.repo.outputs.repository }}
+      pdns_version: ${{ steps.pdns.outputs.version }}
+      subvars_version: ${{ steps.subvars.outputs.version }}
+      subvars_sha256_amd64: ${{ steps.subvars.outputs.sha256_amd64 }}
+      subvars_sha256_arm64: ${{ steps.subvars.outputs.sha256_arm64 }}
+      version_exists: ${{ steps.published.outputs.version_exists }}
+    steps:
+      - name: Resolve Docker Hub repository
+        id: repo
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+        run: |
+          if [ -n "$DOCKERHUB_REPOSITORY" ]; then
+            repository="$DOCKERHUB_REPOSITORY"
+          else
+            repository="$DOCKERHUB_USERNAME/powerdns-auth"
+          fi
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Detect PowerDNS auth version
+        id: pdns
+        run: |
+          version=$(
+            docker run --rm debian:trixie-slim sh -ec "
+              apt-get update >/dev/null
+              DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl >/dev/null
+              install -d /etc/apt/keyrings
+              curl -fsSL https://repo.powerdns.com/FD380FBB-pub.asc -o /etc/apt/keyrings/auth-50-pub.asc
+              codename=\$(. /etc/os-release && printf '%s' \"\$VERSION_CODENAME\")
+              arch=\$(dpkg --print-architecture)
+              echo \"deb [arch=\${arch} signed-by=/etc/apt/keyrings/auth-50-pub.asc] https://repo.powerdns.com/debian \${codename}-auth-50 main\" > /etc/apt/sources.list.d/pdns.list
+              printf 'Package: pdns-*\\nPin: origin repo.powerdns.com\\nPin-Priority: 600\\n' > /etc/apt/preferences.d/auth-50
+              apt-get update >/dev/null
+              apt-cache policy pdns-server | awk '/Candidate:/ { print \$2; exit }' | cut -d- -f1
+            "
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Detect subvars release and checksums
+        id: subvars
+        run: |
+          release_json=$(curl -fsSL https://api.github.com/repos/kha7iq/subvars/releases/latest)
+          version=$(printf '%s' "$release_json" | jq -r '.tag_name' | sed 's/^v//')
+          amd64_url=$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "subvars_Linux_x86_64.tar.gz") | .browser_download_url')
+          arm64_url=$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "subvars_Linux_arm64.tar.gz") | .browser_download_url')
+
+          [ -n "$version" ] && [ "$version" != "null" ]
+          [ -n "$amd64_url" ] && [ "$amd64_url" != "null" ]
+          [ -n "$arm64_url" ] && [ "$arm64_url" != "null" ]
+
+          amd64_sha256=$(curl -fsSL "$amd64_url" | sha256sum | awk '{ print $1 }')
+          arm64_sha256=$(curl -fsSL "$arm64_url" | sha256sum | awk '{ print $1 }')
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha256_amd64=$amd64_sha256" >> "$GITHUB_OUTPUT"
+          echo "sha256_arm64=$arm64_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Check published Docker Hub tags
+        id: published
+        run: |
+          if docker manifest inspect "${{ steps.repo.outputs.repository }}:${{ steps.pdns.outputs.version }}" >/dev/null 2>&1; then
+            echo "version_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version_exists=false" >> "$GITHUB_OUTPUT"
+          fi

@@ -6,7 +6,23 @@ if [ "$DEBUG" -eq 1 ]; then
     set -x
 fi
 
+: "${IMAGE_VERSION:=dev}"
+: "${IMAGE_REPOSITORY:=https://github.com/Datalab-Rotterdam/powerdns-auth}"
+: "${PDNS_DB_INIT:=true}"
+: "${PDNS_DB_CREATE:=false}"
+
 SUPPORTED_BACKENDS="bind gmysql godbc gpgsql gsqlite3 geoip ldap lmdb lua2 pipe random remote tinydns"
+
+print_banner() {
+    cat <<EOF
+============================================================
+ PowerDNS Authoritative Server Docker Image
+ Version    : ${IMAGE_VERSION}
+ Repository : ${IMAGE_REPOSITORY}
+ Maintainer : Datalab Rotterdam
+============================================================
+EOF
+}
 
 backend_enabled() {
     case ",$(echo "$PDNS_launch" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '\n' ',')," in
@@ -50,6 +66,7 @@ ensure_writable_dir() {
 }
 
 validate_backends
+print_banner
 
 prune_backend_env() {
     while IFS='=' read -r name _; do
@@ -100,8 +117,8 @@ prune_backend_env
 
 if backend_enabled "gpgsql"; then
     echo "-> PostgreSQL (gpgsql) backend enabled."
-    if [ "${SKIP_DB_INIT:-false}" = "true" ]; then
-        echo "  Skipping PostgreSQL initialization (SKIP_DB_INIT=true)."
+    if [ "${SKIP_DB_INIT:-false}" = "true" ] || [ "$PDNS_DB_INIT" != "true" ]; then
+        echo "  Skipping PostgreSQL initialization."
     else
         echo "  Waiting for PostgreSQL at ${PDNS_gpgsql_host}:${PDNS_gpgsql_port}..."
         until pg_isready -h "$PDNS_gpgsql_host" -p "$PDNS_gpgsql_port" -U "$PDNS_gpgsql_user" -d "$PDNS_gpgsql_dbname" >/dev/null 2>&1; do
@@ -110,7 +127,9 @@ if backend_enabled "gpgsql"; then
 
         export PGPASSWORD="$PDNS_gpgsql_password"
 
-        if [ "${SKIP_DB_CREATE:-false}" != "true" ]; then
+        if [ "${SKIP_DB_CREATE:-false}" = "true" ] || [ "$PDNS_DB_CREATE" != "true" ]; then
+            echo "  Skipping PostgreSQL database creation."
+        else
             if ! psql -h "$PDNS_gpgsql_host" -p "$PDNS_gpgsql_port" -U "$PDNS_gpgsql_user" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '${PDNS_gpgsql_dbname}'" | grep -q '^1$'; then
                 echo "  Creating database: ${PDNS_gpgsql_dbname}"
                 psql -h "$PDNS_gpgsql_host" -p "$PDNS_gpgsql_port" -U "$PDNS_gpgsql_user" -d postgres -c "CREATE DATABASE ${PDNS_gpgsql_dbname};"
@@ -132,7 +151,7 @@ fi
 
 if backend_enabled "gmysql"; then
     echo "-> MySQL (gmysql) backend enabled."
-    if [ "${SKIP_DB_INIT:-false}" = "true" ]; then
+    if [ "${SKIP_DB_INIT:-false}" = "true" ] || [ "$PDNS_DB_INIT" != "true" ]; then
         echo "  Skipping MySQL initialization."
     else
         echo "  Waiting for MySQL at ${PDNS_gmysql_host}:${PDNS_gmysql_port}..."
@@ -140,7 +159,9 @@ if backend_enabled "gmysql"; then
             sleep 2
         done
 
-        if [ "${SKIP_DB_CREATE:-false}" != "true" ]; then
+        if [ "${SKIP_DB_CREATE:-false}" = "true" ] || [ "$PDNS_DB_CREATE" != "true" ]; then
+            echo "  Skipping MySQL database creation."
+        else
             mysql -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" \
                 -e "CREATE DATABASE IF NOT EXISTS \`${PDNS_gmysql_dbname}\`;"
         fi
@@ -160,7 +181,7 @@ if backend_enabled "gsqlite3"; then
     DB_PATH="${PDNS_gsqlite3_database:-/var/lib/powerdns/pdns.sqlite3}"
     echo "-> SQLite3 (gsqlite3) backend enabled. DB: $DB_PATH"
 
-    if [ "${SKIP_DB_INIT:-false}" = "true" ]; then
+    if [ "${SKIP_DB_INIT:-false}" = "true" ] || [ "$PDNS_DB_INIT" != "true" ]; then
         echo "  Skipping SQLite3 initialization."
     else
         DIR="$(dirname "$DB_PATH")"
