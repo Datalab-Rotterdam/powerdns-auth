@@ -77,6 +77,34 @@ jobs:
             return 1
           }
 
+          wait_for_postgres() {
+            local container="$1"
+            local attempts="${2:-45}"
+            for _ in $(seq 1 "$attempts"); do
+              if docker exec "$container" pg_isready -U powerdns -d powerdns >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs "$container" || true
+            echo "PostgreSQL container $container did not become ready" >&2
+            return 1
+          }
+
+          wait_for_mysql() {
+            local container="$1"
+            local attempts="${2:-60}"
+            for _ in $(seq 1 "$attempts"); do
+              if docker exec "$container" mysqladmin ping -uroot -prootpassword >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs "$container" || true
+            echo "MySQL container $container did not become ready" >&2
+            return 1
+          }
+
           docker run -d --name pdns-sqlite-smoke \
             pdns-auth:smoke
           wait_for_health pdns-sqlite-smoke
@@ -91,6 +119,7 @@ jobs:
             -e POSTGRES_PASSWORD=powerdns \
             -e POSTGRES_DB=powerdns \
             postgres:18
+          wait_for_postgres pdns-pg-db
           docker run -d --name pdns-pg-smoke --network pdns-smoke-net \
             -e PDNS_launch=gpgsql \
             -e PDNS_DB_CREATE=true \
@@ -109,6 +138,7 @@ jobs:
             -e MYSQL_PASSWORD=powerdns \
             -e MYSQL_ROOT_PASSWORD=rootpassword \
             mysql:8.4
+          wait_for_mysql pdns-mysql-db
           docker run -d --name pdns-mysql-smoke --network pdns-smoke-net \
             -e PDNS_launch=gmysql \
             -e PDNS_DB_CREATE=true \
