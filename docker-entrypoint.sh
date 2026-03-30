@@ -65,6 +65,14 @@ ensure_writable_dir() {
     fi
 }
 
+mysql_client_ssl_args() {
+    case "${PDNS_gmysql_ssl_mode:-}" in
+        DISABLED|disabled|OFF|off|NO|no|FALSE|false|0)
+            printf '%s\n' "--skip-ssl"
+            ;;
+    esac
+}
+
 validate_backends
 print_banner
 
@@ -154,24 +162,25 @@ if backend_enabled "gmysql"; then
     if [ "${SKIP_DB_INIT:-false}" = "true" ] || [ "$PDNS_DB_INIT" != "true" ]; then
         echo "  Skipping MySQL initialization."
     else
+        MYSQL_SSL_ARGS="$(mysql_client_ssl_args)"
         echo "  Waiting for MySQL at ${PDNS_gmysql_host}:${PDNS_gmysql_port}..."
-        until mysqladmin ping -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" >/dev/null 2>&1; do
+        until mysqladmin $MYSQL_SSL_ARGS -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" >/dev/null 2>&1; do
             sleep 2
         done
 
         if [ "${SKIP_DB_CREATE:-false}" = "true" ] || [ "$PDNS_DB_CREATE" != "true" ]; then
             echo "  Skipping MySQL database creation."
         else
-            mysql -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" \
+            mysql $MYSQL_SSL_ARGS -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" \
                 -e "CREATE DATABASE IF NOT EXISTS \`${PDNS_gmysql_dbname}\`;"
         fi
 
-        if mysql -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" \
+        if mysql $MYSQL_SSL_ARGS -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" \
             -D "$PDNS_gmysql_dbname" -e "SELECT 1 FROM domains LIMIT 1;" >/dev/null 2>&1; then
             echo "  MySQL schema already present. Skipping init."
         else
             echo "  Initializing MySQL schema..."
-            mysql -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" \
+            mysql $MYSQL_SSL_ARGS -h "$PDNS_gmysql_host" -P "$PDNS_gmysql_port" -u "$PDNS_gmysql_user" --password="$PDNS_gmysql_password" \
                 "$PDNS_gmysql_dbname" < /usr/share/doc/pdns-backend-mysql/schema.mysql.sql
         fi
     fi

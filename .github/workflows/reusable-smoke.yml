@@ -142,6 +142,7 @@ jobs:
           docker run -d --name pdns-mysql-smoke --network pdns-smoke-net \
             -e PDNS_launch=gmysql \
             -e PDNS_DB_CREATE=true \
+            -e PDNS_gmysql_ssl_mode=DISABLED \
             -e PDNS_gmysql_host=pdns-mysql-db \
             -e PDNS_gmysql_port=3306 \
             -e PDNS_gmysql_user=powerdns \
